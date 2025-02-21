@@ -44,7 +44,8 @@ public class Demodulator extends Thread {
 													2*AUDIO_RATE,	// nFM
 													8*AUDIO_RATE,	// wFM
 													2*AUDIO_RATE,	// LSB
-													2*AUDIO_RATE};	// USB
+													2*AUDIO_RATE,   // USB
+													2*AUDIO_RATE};	// CW
 	public static final int INPUT_RATE = 1000000;	// Expected rate of the incoming samples
 
 	// DECIMATION
@@ -55,18 +56,22 @@ public class Demodulator extends Thread {
 	private FirFilter userFilter = null;
 	private int userFilterCutOff = 0;
 	private SamplePacket quadratureSamples;
-	public static final int[] MIN_USER_FILTER_WIDTH = {0,		// off
-														3000,	// AM
-														3000,	// nFM
-														50000,	// wFM
-														1500,	// LSB
-														1500};	// USB
-	public static final int[] MAX_USER_FILTER_WIDTH = {0,		// off
-														15000,	// AM
-														15000,	// nFM
-														120000,	// wFM
-														5000,	// LSB
-														5000};  // USB
+	public static final int[] MIN_USER_FILTER_WIDTH = {0,        // off
+			3000,    // AM
+			3000,    // nFM
+			50000,    // wFM
+			1500,    // LSB
+			1500,    // USB
+			200,    // CW
+	};
+	public static final int[] MAX_USER_FILTER_WIDTH = {0,        // off
+			15000,    // AM
+			15000,    // nFM
+			120000,    // wFM
+			5000,    // LSB
+			5000,  // USB
+			1000, //CW
+	};
 
 	// DEMODULATION
 	private SamplePacket demodulatorHistory;	// used for FM demodulation
@@ -79,6 +84,8 @@ public class Demodulator extends Thread {
 	public static final int DEMODULATION_WFM 	= 3;
 	public static final int DEMODULATION_LSB 	= 4;
 	public static final int DEMODULATION_USB 	= 5;
+
+	public static final int DEMODULATION_CW = 6;
 	public int demodulationMode;
 
 	// AUDIO OUTPUT
@@ -124,7 +131,7 @@ public class Demodulator extends Thread {
 	 * @param demodulationMode	Demodulation Mode (DEMODULATION_OFF, *_AM, *_NFM, *_WFM, ...)
 	 */
 	public void setDemodulationMode(int demodulationMode) {
-		if(demodulationMode > 5 || demodulationMode < 0) {
+		if(demodulationMode > 6 || demodulationMode < 0) {
 			Log.e(LOGTAG,"setDemodulationMode: invalid mode: " + demodulationMode);
 			return;
 		}
@@ -231,6 +238,9 @@ public class Demodulator extends Thread {
 
 				case DEMODULATION_USB:
 					demodulateSSB(quadratureSamples, audioBuffer, true);
+					break;
+				case DEMODULATION_CW:
+					demodulateCW(quadratureSamples, audioBuffer);
 					break;
 
 				default:
@@ -395,6 +405,42 @@ public class Demodulator extends Thread {
 		}
 		// normalize values:
 		float gain = 0.75f/lastMax;
+		for (int i = 0; i < output.size(); i++)
+			reOut[i] *= gain;
+	}
+
+	private void demodulateCW(SamplePacket input, SamplePacket output) {
+		float[] reOut = output.re();
+
+		// complex band pass:
+		if(bandPassFilter == null){
+			// We have to (re-)create the band pass filter:
+			this.bandPassFilter = ComplexFirFilter.createBandPass(	2,		// Decimate by 2; => AUDIO_RATE
+					1,
+					input.getSampleRate(),
+					-userFilterCutOff,
+					userFilterCutOff,
+					input.getSampleRate()*0.01f,
+					BAND_PASS_ATTENUATION);
+			if(bandPassFilter == null)
+				return;	// This may happen if input samples changed rate or demodulation was turned off. Just skip the filtering.
+			Log.d(LOGTAG,"demodulateSSB: created new band pass filter with " + bandPassFilter.getNumberOfTaps()
+					+ " taps. Decimation=" + bandPassFilter.getDecimation() + " Low-Cut-Off="+bandPassFilter.getLowCutOffFrequency()
+					+ " High-Cut-Off="+bandPassFilter.getHighCutOffFrequency() + " transition="+bandPassFilter.getTransitionWidth());
+		}
+		output.setSize(0);	// mark buffer as empty
+		if(bandPassFilter.filter(input, output, 0, input.size()) < input.size()) {
+			Log.e(LOGTAG, "demodulateSSB: could not filter all samples from input packet.");
+		}
+
+		// gain control: searching for max:
+		lastMax *= 0.95;	// simplest AGC
+		for (int i = 0; i < output.size(); i++) {
+			if(reOut[i] > lastMax)
+				lastMax = reOut[i];
+		}
+		// normalize values:
+		float gain = 0.5f/lastMax;
 		for (int i = 0; i < output.size(); i++)
 			reOut[i] *= gain;
 	}

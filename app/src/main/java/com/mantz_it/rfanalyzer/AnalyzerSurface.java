@@ -101,7 +101,7 @@ public class AnalyzerSurface extends SurfaceView implements SurfaceHolder.Callba
 	private long virtualFrequency = -1;		// Center frequency of the fft (baseband) AS SHOWN ON SCREEN
 	private int virtualSampleRate = -1;		// Sample Rate of the fft AS SHOWN ON SCREEN
 	private float minDB = -50;				// Lowest dB on the scale
-	private float maxDB = -5;				// Highest dB on the scale
+	private float maxDB = -8;				// Highest dB on the scale
 	private long lastFrequency;				// Center frequency of the last packet of fft samples
 	private int lastSampleRate;				// Sample rate of the last packet of fft samples
 
